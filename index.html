@@ -200,7 +200,7 @@
 <div class="toast" id="toast"></div>
 
 <!-- ============================================================ -->
-<!-- ====== JAVASCRIPT CON INTERVAL PER LO STOP ====== -->
+<!-- ====== JAVASCRIPT CON STOP AFFIDABILE ====== -->
 <!-- ============================================================ -->
 <script>
     (function() {
@@ -237,7 +237,8 @@
             playerReady: false,
             playerInitPromise: null,
             listenStep: 0,
-            listenInterval: null,  // <-- ora usiamo interval invece di timeout
+            listenInterval: null,
+            listenTimeout: null,   // timeout di sicurezza
             isListenMode: false,
             currentPosition: 0,
             trackDuration: 0,
@@ -413,6 +414,7 @@
             state.playerInitPromise = null;
             clearInterval(state.timerInterval);
             clearInterval(state.listenInterval);
+            clearTimeout(state.listenTimeout);
             showLoginSection();
             const cleanUrl = window.location.origin + window.location.pathname;
             window.history.replaceState({}, document.title, cleanUrl);
@@ -635,7 +637,7 @@
         }
 
         // ===================================================================
-        //  LOGICA ASCOLTO CON INTERVAL
+        //  LOGICA ASCOLTO CON STOP AFFIDABILE
         // ===================================================================
         function getListenDuration(step) {
             if (step < LISTEN_DURATIONS.length) {
@@ -660,15 +662,24 @@
             updatePotentialScore();
         }
 
+        // Funzione centralizzata per fermare e avanzare
         function stopListenAndAdvance() {
-            // Ferma il brano e avanza allo step successivo
+            // Ferma il brano
             pauseTrack();
             state.isListenMode = false;
             dom.listenBtn.classList.remove('listening');
+
+            // Cancella timer e interval
             if (state.listenInterval) {
                 clearInterval(state.listenInterval);
                 state.listenInterval = null;
             }
+            if (state.listenTimeout) {
+                clearTimeout(state.listenTimeout);
+                state.listenTimeout = null;
+            }
+
+            // Avanza allo step successivo
             state.listenStep = getNextListenStep();
             updateListenButton();
             updatePotentialScore();
@@ -728,24 +739,36 @@
             dom.listenBtn.innerHTML = `<i class="fas fa-pause"></i> Ascolto... ${remaining.toFixed(1)}s`;
             dom.listenBtn.disabled = true;
 
-            // Usiamo un interval per controllare la posizione
+            // Cancella eventuali timer/interval precedenti
             if (state.listenInterval) {
                 clearInterval(state.listenInterval);
                 state.listenInterval = null;
             }
-
-            if (remaining > 0) {
-                const targetPosition = duration; // vogliamo arrivare a questa posizione
-                state.listenInterval = setInterval(() => {
-                    if (state.currentPosition >= targetPosition) {
-                        // Ferma il brano e avanza
-                        stopListenAndAdvance();
-                    }
-                }, 200); // controlla ogni 200ms
-            } else {
-                // Se remaining <= 0, ferma subito
-                stopListenAndAdvance();
+            if (state.listenTimeout) {
+                clearTimeout(state.listenTimeout);
+                state.listenTimeout = null;
             }
+
+            const targetPosition = duration;
+
+            // 1) Timer di sicurezza: ferma dopo remaining + 1 secondo (margine)
+            const safetyTimeout = Math.max(remaining, 0.5) + 1.0; // almeno 1.5 secondi totali
+            state.listenTimeout = setTimeout(() => {
+                // Se siamo ancora in ascolto, fermiamo forzatamente
+                if (state.isListenMode) {
+                    console.log('⏰ Safety timeout triggered, forcing stop.');
+                    stopListenAndAdvance();
+                }
+            }, safetyTimeout * 1000);
+
+            // 2) Interval di controllo preciso (ogni 150ms)
+            state.listenInterval = setInterval(() => {
+                // Controlla se abbiamo raggiunto o superato la posizione target
+                if (state.currentPosition >= targetPosition) {
+                    console.log(`🎯 Target position ${targetPosition}s reached (current: ${state.currentPosition}s). Stopping.`);
+                    stopListenAndAdvance();
+                }
+            }, 150);
         }
 
         function stopListenStep() {
@@ -756,6 +779,10 @@
                 if (state.listenInterval) {
                     clearInterval(state.listenInterval);
                     state.listenInterval = null;
+                }
+                if (state.listenTimeout) {
+                    clearTimeout(state.listenTimeout);
+                    state.listenTimeout = null;
                 }
                 updateListenButton();
                 dom.progressFill.style.width = '0%';
@@ -960,6 +987,10 @@
                 clearInterval(state.listenInterval);
                 state.listenInterval = null;
             }
+            if (state.listenTimeout) {
+                clearTimeout(state.listenTimeout);
+                state.listenTimeout = null;
+            }
             state.currentPosition = 0;
             state.isNewTrack = true;
             dom.listenBtn.disabled = false;
@@ -1035,6 +1066,10 @@
                 if (state.listenInterval) {
                     clearInterval(state.listenInterval);
                     state.listenInterval = null;
+                }
+                if (state.listenTimeout) {
+                    clearTimeout(state.listenTimeout);
+                    state.listenTimeout = null;
                 }
             }
             dom.listenBtn.disabled = true;
@@ -1113,6 +1148,10 @@
                 clearInterval(state.listenInterval);
                 state.listenInterval = null;
             }
+            if (state.listenTimeout) {
+                clearTimeout(state.listenTimeout);
+                state.listenTimeout = null;
+            }
             dom.listenBtn.innerHTML = '<i class="fas fa-play"></i> Ascolta';
             dom.listenBtn.classList.remove('listening');
             showPlaylistSection();
@@ -1139,6 +1178,10 @@
             if (state.listenInterval) {
                 clearInterval(state.listenInterval);
                 state.listenInterval = null;
+            }
+            if (state.listenTimeout) {
+                clearTimeout(state.listenTimeout);
+                state.listenTimeout = null;
             }
             dom.listenBtn.innerHTML = '<i class="fas fa-play"></i> Ascolta';
             dom.listenBtn.classList.remove('listening');
